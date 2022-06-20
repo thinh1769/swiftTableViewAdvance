@@ -6,53 +6,22 @@
 //
 
 import UIKit
+import RxCocoa
+import RxSwift
 
-struct TableData {
-    var id: Int = 0
-    var name: String = ""
-    var isCollapsed : Bool
-    var detailData: [DetailData] = []
-}
-struct DetailData {
-    var id: Int = 0
-    var detailList: [CellData] = []
-}
-struct CellData {
-    var name: String = ""
-}
 class ViewController: UIViewController {
 
     @IBOutlet weak var homeTableView: UITableView!
     
     var tableCell = String(describing: TableCell.self)
     var detailCell = String(describing: DetailCell.self)
-    var tableData: [TableData] = [
-        TableData(id: 1, name: "One", isCollapsed: true, detailData: [
-            DetailData(id: 1, detailList: [
-                CellData(name: "thinh"),
-                CellData(name: "nguyen"),
-                CellData(name: "phuc")
-            ])
-//            DetailData(id: 2, detailList: [
-//                CellData(name: "long")
-//            ])
-        ]),
-        TableData(id: 2, name: "Two", isCollapsed: false, detailData: [])
-//        TableData(id: 3, name: "Three", isCollapsed: false, detailData: []),
-//        TableData(id: 4, name: "Four", isCollapsed: true, detailData: []),
-//        TableData(id: 5, name: "Five", isCollapsed: false, detailData: [])
-    ]
-//    var tableData: [TableData] = [
-//        TableData(id: 1, name: "One", isCollapsed: true, detailData: []),
-//        TableData(id: 2, name: "Two", isCollapsed: false, detailData: []),
-//        TableData(id: 3, name: "Three", isCollapsed: false, detailData: []),
-//        TableData(id: 4, name: "Four", isCollapsed: true, detailData: []),
-//        TableData(id: 5, name: "Five", isCollapsed: false, detailData: [])
-//    ]
+    let viewModel: ViewModel = ViewModelImpl()
+    let disposeBag = DisposeBag()
     
     override func viewDidLoad() {
         super.viewDidLoad()
         setUpTableView()
+        subscribe()
     }
 }
 extension ViewController {
@@ -68,21 +37,26 @@ extension ViewController {
         detailVC.currentIndex = currentIndex
         navigationController?.pushViewController(detailVC, animated: true)
     }
+    func subscribe() {
+        viewModel.cellViewModels.subscribe { _ in
+            self.homeTableView.reloadData()
+        }.disposed(by: disposeBag)
+    }
 }
 
 extension ViewController: UITableViewDataSource {
     func numberOfSections(in tableView: UITableView) -> Int {
-        return tableData.count
+        return viewModel.cellViewModels.value.count
     }
     
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return 1 + tableData[section].detailData.count
+        return 1 + viewModel.cellViewModels.value[section].detailData.count
     }
     
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         if indexPath.row == 0 {
             let cell = tableView.dequeueReusableCell(withIdentifier: tableCell, for: indexPath) as! TableCell
-            cell.tableCellData = tableData[indexPath.section]
+            cell.tableCellData = viewModel.cellViewModels.value[indexPath.section]
             cell.setUpTableCell()
             cell.buttonAction = { [unowned self] in
                 pushToDetailView(currentIndex: indexPath)
@@ -90,7 +64,7 @@ extension ViewController: UITableViewDataSource {
         return cell
         } else {
             let cell = tableView.dequeueReusableCell(withIdentifier: detailCell, for: indexPath) as! DetailCell
-            cell.detailCellData = tableData[indexPath.section].detailData[indexPath.row - 1]
+            cell.detailCellData =  viewModel.cellViewModels.value[indexPath.section].detailData[indexPath.row - 1]
             cell.detailTableView.reloadData()
             return cell
         }
@@ -98,8 +72,8 @@ extension ViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         if indexPath.row == 0 {
             return 60
-        } else if tableData[indexPath.section].isCollapsed {
-            return CGFloat((tableData[indexPath.section].detailData[indexPath.row-1].detailList.count + 1) * 40)
+        } else if viewModel.cellViewModels.value[indexPath.section].isCollapsed {
+            return CGFloat((viewModel.cellViewModels.value[indexPath.section].detailData[indexPath.row - 1].detailList.count + 1) * 40)
         } else {
             return 0
         }
@@ -112,37 +86,31 @@ extension ViewController: UITableViewDelegate {
 
 extension ViewController: DetailViewControllerelegate {
     func addingDetailCell(detailCell: DetailData, cellData: CellData, currentIndex: IndexPath) {
-        if tableData[currentIndex.section].detailData.count == 0 {
-            tableData[currentIndex.section].detailData.append(detailCell)
-            tableData[currentIndex.section].isCollapsed = true
-//            UIView.performWithoutAnimation {
-//                homeTableView.reloadSections([currentIndex.section], with: .none)
-//            }
+        if viewModel.cellViewModels.value[currentIndex.section].detailData.count == 0 {
+            viewModel.addTableData(detailCell: detailCell, index: currentIndex.section)
             reloadWithoutAnimation(indexSection: [currentIndex.section])
         } else {
             if !checkId(cell: detailCell, index: currentIndex.section) {
-                tableData[currentIndex.section].detailData.append(detailCell)
+                viewModel.addTableData(detailCell: detailCell, index: currentIndex.section)
                 reloadWithoutAnimation(indexSection: [currentIndex.section])
             } else {
-                for (index, element) in tableData[currentIndex.section].detailData.enumerated() {
+                for (index, element) in viewModel.cellViewModels.value[currentIndex.section].detailData.enumerated() {
                     if detailCell.id == element.id {
-                        tableData[currentIndex.section].detailData[index].detailList.append(cellData)
+                        viewModel.addCellData(cellData: cellData, section: currentIndex.section, index: index)
                         reloadWithoutAnimation(indexSection: [currentIndex.section])
                         break
-                }
-                
+                    }
             }
         }
-    }
+        }
     func checkId(cell: DetailData, index: Int) -> Bool {
-        for (_, element) in tableData[index].detailData.enumerated() {
+        for (_, element) in viewModel.cellViewModels.value[index].detailData.enumerated() {
             if cell.id == element.id {
                 return true
             }
         }
         return false
     }
-        
         func reloadWithoutAnimation(indexSection: IndexSet) {
             UIView.performWithoutAnimation {
                 homeTableView.reloadSections(indexSection, with: .none)
